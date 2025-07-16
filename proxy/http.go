@@ -47,19 +47,3 @@ func (p *HttpProxy) Proxy(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Client -> Proxy (current) -> %s (http) -> %s (target)", p.Address, r.Host)
 	io.Copy(w, resp.Body)
 }
-
-func (p *HttpProxy) Direct(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.DefaultTransport.RoundTrip(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-	}
-	defer resp.Body.Close()
-
-	for k, v := range resp.Header {
-		for _, val := range v {
-			w.Header().Add(k, val)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
-}

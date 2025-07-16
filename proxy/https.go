@@ -24,13 +24,15 @@ func (p *HttpsProxy) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	defer clientConn.Close()
+
 	// 連線目標主機
 	serverConn, err := net.Dial("tcp", r.Host)
 	if err != nil {
 		clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
-		clientConn.Close()
 		return
 	}
+	defer serverConn.Close()
 
 	// 回應客戶端連線已建立
 	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
@@ -39,31 +41,4 @@ func (p *HttpsProxy) Proxy(w http.ResponseWriter, r *http.Request) {
 	// 雙向轉發流量
 	go io.Copy(serverConn, clientConn)
 	io.Copy(clientConn, serverConn)
-
-	clientConn.Close()
-	serverConn.Close()
-}
-
-func (p *HttpsProxy) Direct(w http.ResponseWriter, r *http.Request) {
-
-	destConn, err := net.Dial("tcp", r.Host)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
-		return
-	}
-	clientConn, _, err := hijacker.Hijack()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-
-	_, _ = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-
-	go io.Copy(destConn, clientConn)
-	go io.Copy(clientConn, destConn)
 }

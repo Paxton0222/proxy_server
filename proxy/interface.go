@@ -1,7 +1,10 @@
 package proxy
 
-import "net/http"
+import (
+	"net"
+	"net/http"
+)
 
 type Proxy interface {
-	Proxy(w http.ResponseWriter, r *http.Request)
+	Proxy(clientConn net.Conn, r *http.Request)
 }

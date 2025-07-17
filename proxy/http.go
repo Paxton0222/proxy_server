@@ -1,49 +1,78 @@
 package proxy
 
 import (
-	"io"
 	"log"
+	"net"
 	"net/http"
-	"net/url"
 )
 
 type HttpProxy struct {
 	Address string
 }
 
-func (p *HttpProxy) Proxy(w http.ResponseWriter, r *http.Request) {
-	proxyURL, err := url.Parse("http://" + p.Address)
+func (p *HttpProxy) Proxy(clientConn net.Conn, r *http.Request) {
+	if r.URL.Scheme == "http" {
+		p.direct(clientConn, r)
+	} else {
+		p.connect(clientConn, r)
+	}
+}
+
+func (p *HttpProxy) newHttpConn(r *http.Request, conn net.Conn) (net.Conn, error) {
+	host, port, err := extractHostAndPort(r)
 	if err != nil {
-		http.Error(w, "Invalid proxy address", http.StatusInternalServerError)
+		serverError(conn)
+		return nil, err
+	}
+
+	serverConn, err := net.Dial("tcp", host+":"+port)
+	if err != nil {
+		badGatewayError(conn)
+		return nil, err
+	}
+	return serverConn, nil
+}
+
+func (p *HttpProxy) newHttpsConn(r *http.Request, conn net.Conn) (net.Conn, error) {
+	host, port, err := extractHostAndPort(r)
+	if err != nil {
+		serverError(conn)
+		return nil, err
+	}
+
+	serverConn, err := net.Dial("tcp", host+":"+port)
+	if err != nil {
+		badGatewayError(conn)
+		return nil, err
+	}
+	return serverConn, nil
+}
+
+func (p *HttpProxy) direct(clientConn net.Conn, r *http.Request) {
+	serverConn, err := p.newHttpConn(r, clientConn)
+	if err != nil {
+		return
+	}
+	defer serverConn.Close()
+
+	err = httpProxyStartTransfer(r, clientConn, serverConn)
+	if err != nil {
 		return
 	}
 
-	transport := &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-	}
-
-	client := &http.Client{
-		Transport: transport,
-	}
-
-	// 清除可能會影響代理的 RequestURI
-	r.RequestURI = ""
-
-	resp, err := client.Do(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-
-	// 複製回應 Header
-	for k, vv := range resp.Header {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-
-	w.WriteHeader(resp.StatusCode)
 	log.Printf("Client -> Proxy (current) -> %s (http) -> %s (target)", p.Address, r.Host)
-	io.Copy(w, resp.Body)
+	transfer(clientConn, serverConn)
+}
+
+func (p *HttpProxy) connect(clientConn net.Conn, r *http.Request) {
+	connectionEstablished(clientConn)
+
+	serverConn, err := p.newHttpsConn(r, clientConn)
+	if err != nil {
+		return
+	}
+	defer serverConn.Close()
+
+	log.Printf("Client -> Proxy (current) -> %s (https) -> %s (target)", p.Address, r.Host)
+	transfer(clientConn, serverConn)
 }

@@ -2,20 +2,21 @@ package main
 
 import (
 	"log"
+	"net"
 	"net/http"
-	"proxy/protocol"
+	"proxy/pool"
 )
 
 func startHTTPProxy(addr string) {
-	connProtocol := protocol.ConnectProtocol{}
-	directProtocol := protocol.DirectProtocol{}
+	httpProtocol := pool.Pool{}
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodConnect {
-			connProtocol.Handle(w, r)
-		} else {
-			directProtocol.Handle(w, r)
+		clientConn, err, done := newHijackClientConn(w)
+		if done || err != nil {
+			return
 		}
+		defer clientConn.Close()
+		httpProtocol.Handle(clientConn, r)
 	}
 
 	server := &http.Server{
@@ -25,6 +26,21 @@ func startHTTPProxy(addr string) {
 
 	log.Printf("HTTP Proxy 啟動於 %s\n", addr)
 	log.Fatal(server.ListenAndServe())
+}
+
+// 劫持客戶端連線
+func newHijackClientConn(w http.ResponseWriter) (net.Conn, error, bool) {
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
+		return nil, nil, true
+	}
+	clientConn, _, err := hj.Hijack()
+	if err != nil {
+		http.Error(w, "Hijack failed: "+err.Error(), http.StatusInternalServerError)
+		return nil, nil, true
+	}
+	return clientConn, err, false
 }
 
 func main() {

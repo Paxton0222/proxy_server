@@ -1,10 +1,8 @@
 package proxy
 
 import (
-	"bufio"
 	"github.com/shadowsocks/go-shadowsocks2/core"
 	"github.com/shadowsocks/go-shadowsocks2/socks"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -17,102 +15,77 @@ type SSProxy struct {
 	Password string
 }
 
-func (s *SSProxy) Proxy(w http.ResponseWriter, r *http.Request) {
+func (s *SSProxy) Proxy(clientConn net.Conn, r *http.Request) {
 	if r.Method == http.MethodConnect {
-		s.connect(w, r)
+		s.connect(clientConn, r)
 	} else {
-		s.direct(w, r)
+		s.direct(clientConn, r)
 	}
 }
 
-func (s *SSProxy) direct(w http.ResponseWriter, r *http.Request) {
+func (s *SSProxy) direct(clientConn net.Conn, r *http.Request) {
+	serverConn, err := s.newSsConn(r, clientConn)
+	if err != nil {
+		return
+	}
+	defer serverConn.Close()
+
+	err = httpProxyStartTransfer(r, clientConn, serverConn)
+	if err != nil {
+		return
+	}
+
+	log.Printf("Client -> Proxy (current) -> %s (ss) -> %s (target)", s.Address, r.Host)
+
+	transfer(clientConn, serverConn)
+}
+
+func (s *SSProxy) connect(clientConn net.Conn, r *http.Request) {
+	connectionEstablished(clientConn)
+
+	serverConn, err := s.newSsConn(r, clientConn)
+	if err != nil {
+		return
+	}
+	defer serverConn.Close()
+
+	log.Printf("Client -> Proxy (current) -> %s (ss) -> %s (target)", s.Address, r.Host)
+
+	transfer(clientConn, serverConn)
+}
+
+func (s *SSProxy) newSsConn(r *http.Request, conn net.Conn) (net.Conn, error) {
 	cipher, err := core.PickCipher(s.Method, nil, s.Password)
 	if err != nil {
-		http.Error(w, "cipher error: "+err.Error(), http.StatusInternalServerError)
-		return
+		badGatewayError(conn)
+		return nil, err
 	}
 
 	ssConn, err := core.Dial("tcp", s.Address, cipher)
 	if err != nil {
-		http.Error(w, "ss dial error: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer ssConn.Close()
-	ssConn.SetDeadline(time.Now().Add(15 * time.Second))
-
-	// 處理 Host 加 port
-	host := r.Host
-	if _, _, err := net.SplitHostPort(host); err != nil {
-		host += ":80"
+		badGatewayError(conn)
+		return nil, err
 	}
 
-	// 傳送地址封包
-	_, err = ssConn.Write(socks.ParseAddr(host))
+	var host string
+
+	host, port, err := extractHostAndPort(r)
 	if err != nil {
-		http.Error(w, "write target to ss failed: "+err.Error(), http.StatusBadGateway)
-		return
+		serverError(conn)
+		return nil, err
 	}
 
-	// 清除 URI
-	r.RequestURI = ""
-
-	// 寫入 request 給 ss server
-	err = r.Write(ssConn)
+	_, err = ssConn.Write(socks.ParseAddr(host + ":" + port))
 	if err != nil {
-		http.Error(w, "send request via ss failed: "+err.Error(), http.StatusBadGateway)
-		return
+		badGatewayError(conn)
+		return nil, err
 	}
 
-	// 回應
-	resp, err := http.ReadResponse(bufio.NewReader(ssConn), r)
+	err = ssConn.SetDeadline(time.Now().Add(15 * time.Second))
 	if err != nil {
-		http.Error(w, "read response from ss failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-
-	for k, vv := range resp.Header {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	log.Printf("Client -> Proxy (current) -> %s (ss) -> %s (target)", s.Address, r.Host)
-	io.Copy(w, resp.Body)
-}
-
-func (s *SSProxy) connect(w http.ResponseWriter, r *http.Request) {
-	hj, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
-		return
-	}
-	clientConn, _, err := hj.Hijack()
-	if err != nil {
-		http.Error(w, "Hijack failed: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer clientConn.Close()
-
-	cipher, err := core.PickCipher(s.Method, nil, s.Password)
-	if err != nil {
-		return
-	}
-	ssConn, err := core.Dial("tcp", s.Address, cipher)
-	if err != nil {
-		return
-	}
-	defer ssConn.Close()
-
-	_, err = ssConn.Write(socks.ParseAddr(r.Host))
-	if err != nil {
-		log.Println("failed to write target addr to ssConn:", err)
-		return
+		badGatewayError(conn)
+		return nil, err
 	}
 
-	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-	log.Printf("Client -> Proxy (current) -> %s (ss) -> %s (target)", s.Address, r.Host)
-
-	go io.Copy(ssConn, clientConn)
-	io.Copy(clientConn, ssConn)
+	return ssConn, nil
 }

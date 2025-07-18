@@ -29,24 +29,33 @@ func (v *VmessProxy) Proxy(clientConn net.Conn, r *http.Request) {
 	}
 }
 
-func (v *VmessProxy) direct(clientConn net.Conn, r *http.Request) {
-	transportConn, err := newV2RayTransportConn(
-		r,
-		clientConn,
-		v.Address,
-		v.Port,
-		v.TransportType,
-		v.TransportHideUrl,
-		v.TransportPath,
-		v.TlsConfig,
-	)
+func (v *VmessProxy) Request(r *http.Request) (*http.Response, error) {
+	transportConn, err := newV2RayTransportConn(r, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
 	if err != nil {
+		return nil, err
+	}
+	defer transportConn.Close()
+
+	serverConn, err := v.newVmessConn(r, transportConn)
+	if err != nil {
+		return nil, err
+	}
+	defer serverConn.Close()
+
+	return sendHttpOverTlsRequest(r, serverConn)
+}
+
+func (v *VmessProxy) direct(clientConn net.Conn, r *http.Request) {
+	transportConn, err := newV2RayTransportConn(r, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
+	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer transportConn.Close()
 
-	serverConn, err := v.newVmessConn(r, clientConn, transportConn)
+	serverConn, err := v.newVmessConn(r, transportConn)
 	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
@@ -65,23 +74,16 @@ func (v *VmessProxy) direct(clientConn net.Conn, r *http.Request) {
 func (v *VmessProxy) connect(clientConn net.Conn, r *http.Request) {
 	connectionEstablished(clientConn)
 
-	transportConn, err := newV2RayTransportConn(
-		r,
-		clientConn,
-		v.Address,
-		v.Port,
-		v.TransportType,
-		v.TransportHideUrl,
-		v.TransportPath,
-		v.TlsConfig,
-	)
+	transportConn, err := newV2RayTransportConn(r, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
 	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer transportConn.Close()
 
-	serverConn, err := v.newVmessConn(r, clientConn, transportConn)
+	serverConn, err := v.newVmessConn(r, transportConn)
 	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
@@ -90,21 +92,19 @@ func (v *VmessProxy) connect(clientConn net.Conn, r *http.Request) {
 	transfer(clientConn, serverConn)
 }
 
-func (v *VmessProxy) newVmessConn(r *http.Request, clientConn net.Conn, transportConn net.Conn) (net.Conn, error) {
+func (v *VmessProxy) newVmessConn(r *http.Request, transportConn net.Conn) (net.Conn, error) {
 	client, err := vmess.NewClient(
 		v.Uuid,
 		v.Security,
 		v.AlterId,
 	)
 	if err != nil {
-		badGatewayError(clientConn)
 		log.Println("VMess client error:", err)
 		return nil, err
 	}
 
 	host, port, err := extractHostAndPort(r)
 	if err != nil {
-		serverError(clientConn)
 		return nil, err
 	}
 
@@ -114,7 +114,6 @@ func (v *VmessProxy) newVmessConn(r *http.Request, clientConn net.Conn, transpor
 	)
 	if err != nil {
 		log.Println("VMess DialConn error:", err)
-		badGatewayError(clientConn)
 		return nil, err
 	}
 

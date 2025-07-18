@@ -15,15 +15,17 @@ func (p *Pool) Handle(clientConn net.Conn, r *http.Request) {
 	pool := [...]proxy.Proxy{
 		//&proxy.HttpProxy{
 		//	Address: "localhost:10808",
+		//	Ssl:     false,
 		//},
 		//&proxy.HttpProxy{
 		//	Address: "localhost:3129",
+		//	Ssl:     true,
 		//},
-		//&proxy.SSProxy{
-		//	Address:  "localhost:8388",
-		//	Method:   "aes-256-gcm",
-		//	Password: "1234",
-		//},
+		&proxy.SSProxy{
+			Address:  "localhost:8388",
+			Method:   "aes-256-gcm",
+			Password: "1234",
+		},
 		//&proxy.VmessProxy{
 		//	Address:       "localhost",
 		//	Port:          "10089",

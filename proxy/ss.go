@@ -23,15 +23,27 @@ func (s *SSProxy) Proxy(clientConn net.Conn, r *http.Request) {
 	}
 }
 
-func (s *SSProxy) direct(clientConn net.Conn, r *http.Request) {
-	serverConn, err := s.newSsConn(r, clientConn)
+func (s *SSProxy) Request(r *http.Request) (*http.Response, error) {
+	proxyConn, err := s.newSsConn(r)
 	if err != nil {
+		return nil, err
+	}
+	defer proxyConn.Close()
+
+	return sendHttpOverTlsRequest(r, proxyConn)
+}
+
+func (s *SSProxy) direct(clientConn net.Conn, r *http.Request) {
+	serverConn, err := s.newSsConn(r)
+	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
 
 	err = httpProxyStartTransfer(r, clientConn, serverConn)
 	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 
@@ -43,8 +55,9 @@ func (s *SSProxy) direct(clientConn net.Conn, r *http.Request) {
 func (s *SSProxy) connect(clientConn net.Conn, r *http.Request) {
 	connectionEstablished(clientConn)
 
-	serverConn, err := s.newSsConn(r, clientConn)
+	serverConn, err := s.newSsConn(r)
 	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
@@ -54,36 +67,29 @@ func (s *SSProxy) connect(clientConn net.Conn, r *http.Request) {
 	transfer(clientConn, serverConn)
 }
 
-func (s *SSProxy) newSsConn(r *http.Request, conn net.Conn) (net.Conn, error) {
+func (s *SSProxy) newSsConn(r *http.Request) (net.Conn, error) {
 	cipher, err := core.PickCipher(s.Method, nil, s.Password)
 	if err != nil {
-		badGatewayError(conn)
 		return nil, err
 	}
 
 	ssConn, err := core.Dial("tcp", s.Address, cipher)
 	if err != nil {
-		badGatewayError(conn)
 		return nil, err
 	}
-
-	var host string
 
 	host, port, err := extractHostAndPort(r)
 	if err != nil {
-		serverError(conn)
 		return nil, err
 	}
 
-	_, err = ssConn.Write(socks.ParseAddr(host + ":" + port))
+	_, err = ssConn.Write(socks.ParseAddr(net.JoinHostPort(host, port)))
 	if err != nil {
-		badGatewayError(conn)
 		return nil, err
 	}
 
 	err = ssConn.SetDeadline(time.Now().Add(15 * time.Second))
 	if err != nil {
-		badGatewayError(conn)
 		return nil, err
 	}
 

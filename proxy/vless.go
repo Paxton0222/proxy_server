@@ -29,15 +29,33 @@ func (v *VlessProxy) Proxy(clientConn net.Conn, r *http.Request) {
 	}
 }
 
-func (v *VlessProxy) direct(clientConn net.Conn, r *http.Request) {
-	transportConn, err := newV2RayTransportConn(r, clientConn, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
+func (v *VlessProxy) Request(r *http.Request) (*http.Response, error) {
+	transportConn, err := newV2RayTransportConn(r, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
 	if err != nil {
+		return nil, err
+	}
+	defer transportConn.Close()
+
+	serverConn, err := v.newVlessConn(r, transportConn)
+	if err != nil {
+		return nil, err
+	}
+	defer serverConn.Close()
+
+	return sendHttpOverTlsRequest(r, serverConn)
+}
+
+func (v *VlessProxy) direct(clientConn net.Conn, r *http.Request) {
+	transportConn, err := newV2RayTransportConn(r, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
+	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer transportConn.Close()
 
-	serverConn, err := v.newVlessConn(r, clientConn, transportConn)
+	serverConn, err := v.newVlessConn(r, transportConn)
 	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
@@ -55,14 +73,16 @@ func (v *VlessProxy) direct(clientConn net.Conn, r *http.Request) {
 func (v *VlessProxy) connect(clientConn net.Conn, r *http.Request) {
 	connectionEstablished(clientConn)
 
-	transportConn, err := newV2RayTransportConn(r, clientConn, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
+	transportConn, err := newV2RayTransportConn(r, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
 	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer transportConn.Close()
 
-	serverConn, err := v.newVlessConn(r, clientConn, transportConn)
+	serverConn, err := v.newVlessConn(r, transportConn)
 	if err != nil {
+		badGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
@@ -71,7 +91,7 @@ func (v *VlessProxy) connect(clientConn net.Conn, r *http.Request) {
 	transfer(clientConn, serverConn)
 }
 
-func (v *VlessProxy) newVlessConn(r *http.Request, clientConn net.Conn, transportConn net.Conn) (net.Conn, error) {
+func (v *VlessProxy) newVlessConn(r *http.Request, transportConn net.Conn) (net.Conn, error) {
 	client, err := vless.NewClient(
 		v.Uuid,
 		v.Flow,
@@ -79,13 +99,11 @@ func (v *VlessProxy) newVlessConn(r *http.Request, clientConn net.Conn, transpor
 	)
 	if err != nil {
 		log.Println("Vless client error:", err)
-		badGatewayError(clientConn)
 		return nil, err
 	}
 
 	host, port, err := extractHostAndPort(r)
 	if err != nil {
-		serverError(clientConn)
 		return nil, err
 	}
 
@@ -95,7 +113,6 @@ func (v *VlessProxy) newVlessConn(r *http.Request, clientConn net.Conn, transpor
 	)
 	if err != nil {
 		log.Println("Vless DialConn error:", err)
-		badGatewayError(clientConn)
 		return nil, err
 	}
 

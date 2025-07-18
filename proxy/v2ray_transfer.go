@@ -13,16 +13,7 @@ import (
 )
 
 // 建立 v2ray 傳輸協議
-func newV2RayTransportConn(
-	r *http.Request,
-	clientConn net.Conn,
-	host string,
-	port string,
-	transportType string,
-	transportHideUrl string,
-	transportPath string,
-	tlsOptions option.OutboundTLSOptions,
-) (net.Conn, error) {
+func newV2RayTransportConn(r *http.Request, host string, port string, transportType string, transportHideUrl string, transportPath string, tlsOptions option.OutboundTLSOptions) (net.Conn, error) {
 	var transportConn net.Conn
 	var err error
 
@@ -33,7 +24,6 @@ func newV2RayTransportConn(
 	if transportType == "tcp" {
 		transportConn, err = net.Dial("tcp", host+":"+port)
 		if err != nil {
-			badGatewayError(clientConn)
 			log.Println("Tcp dial error:", err)
 			return nil, err
 		}
@@ -41,7 +31,6 @@ func newV2RayTransportConn(
 		dialerOptions := &option.DialerOptions{}
 		d, err := dialer.New(r.Context(), *dialerOptions)
 		if err != nil {
-			badGatewayError(clientConn)
 			log.Println("Websocket dial error:", err)
 			return nil, err
 		}
@@ -69,19 +58,16 @@ func newV2RayTransportConn(
 			*&tlsOptions,
 		)
 		if err != nil {
-			serverError(clientConn)
 			return nil, err
 		}
 
 		transport, err := v2raywebsocket.NewClient(r.Context(), d, wsTarget, *websocketOptions, tlsOption)
 		if err != nil {
-			badGatewayError(clientConn)
 			return nil, err
 		}
 
 		transportConn, err = transport.DialContext(r.Context())
 		if err != nil {
-			badGatewayError(clientConn)
 			return nil, err
 		}
 	}

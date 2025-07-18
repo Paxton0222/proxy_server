@@ -60,7 +60,7 @@ func (p *HttpProxy) direct(clientConn net.Conn, r *http.Request) {
 		return
 	}
 
-	log.Printf("Client -> Proxy (current) -> %s (http) -> %s (target)", p.Address, r.Host)
+	log.Printf("Client <-> Proxy (current) <-> %s (http) <-> %s (target)", p.Address, r.Host)
 	transfer(clientConn, serverConn)
 }
 
@@ -73,6 +73,6 @@ func (p *HttpProxy) connect(clientConn net.Conn, r *http.Request) {
 	}
 	defer serverConn.Close()
 
-	log.Printf("Client -> Proxy (current) -> %s (https) -> %s (target)", p.Address, r.Host)
+	log.Printf("Client <-> Proxy (current) <-> %s (https) <-> %s (target)", p.Address, r.Host)
 	transfer(clientConn, serverConn)
 }

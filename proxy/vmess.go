@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-vmess"
 	"github.com/sagernet/sing/common/metadata"
 	"log"
@@ -9,12 +10,15 @@ import (
 )
 
 type VmessProxy struct {
-	Address       string
-	Uuid          string
-	Security      string
-	AlterId       int
-	TransportType string
-	TransportPath string
+	Address          string
+	Port             string
+	Uuid             string
+	Security         string
+	AlterId          int
+	TransportType    string
+	TransportHideUrl string
+	TransportPath    string
+	TlsConfig        option.OutboundTLSOptions
 }
 
 func (v *VmessProxy) Proxy(clientConn net.Conn, r *http.Request) {
@@ -26,7 +30,16 @@ func (v *VmessProxy) Proxy(clientConn net.Conn, r *http.Request) {
 }
 
 func (v *VmessProxy) direct(clientConn net.Conn, r *http.Request) {
-	transportConn, err := newV2RayTransportConn(r, clientConn, v.Address, v.TransportType, v.TransportPath)
+	transportConn, err := newV2RayTransportConn(
+		r,
+		clientConn,
+		v.Address,
+		v.Port,
+		v.TransportType,
+		v.TransportHideUrl,
+		v.TransportPath,
+		v.TlsConfig,
+	)
 	if err != nil {
 		return
 	}
@@ -44,7 +57,7 @@ func (v *VmessProxy) direct(clientConn net.Conn, r *http.Request) {
 		return
 	}
 
-	log.Printf("Client -> Proxy (current) -> %s (vmess) -> %s (target)", v.Address, r.Host)
+	log.Printf("Client <-> Proxy (current) <-> %s:%s (vmess) <-> %s (target)", v.Address, v.Port, r.Host)
 
 	transfer(clientConn, serverConn)
 }
@@ -52,7 +65,16 @@ func (v *VmessProxy) direct(clientConn net.Conn, r *http.Request) {
 func (v *VmessProxy) connect(clientConn net.Conn, r *http.Request) {
 	connectionEstablished(clientConn)
 
-	transportConn, err := newV2RayTransportConn(r, clientConn, v.Address, v.TransportType, v.TransportPath)
+	transportConn, err := newV2RayTransportConn(
+		r,
+		clientConn,
+		v.Address,
+		v.Port,
+		v.TransportType,
+		v.TransportHideUrl,
+		v.TransportPath,
+		v.TlsConfig,
+	)
 	if err != nil {
 		return
 	}
@@ -64,7 +86,7 @@ func (v *VmessProxy) connect(clientConn net.Conn, r *http.Request) {
 	}
 	defer serverConn.Close()
 
-	log.Printf("Client -> Proxy (current) -> %s (vmess) -> %s (target)", v.Address, r.Host)
+	log.Printf("Client <-> Proxy (current) <-> %s:%s (vmess) <-> %s (target)", v.Address, v.Port, r.Host)
 	transfer(clientConn, serverConn)
 }
 

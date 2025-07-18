@@ -1,11 +1,6 @@
 package proxy
 
 import (
-	"github.com/sagernet/sing-box/common/dialer"
-	"github.com/sagernet/sing-box/common/tls"
-	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-box/transport/v2raywebsocket"
-	"github.com/sagernet/sing/common/metadata"
 	"io"
 	"log"
 	"net"
@@ -32,64 +27,6 @@ func extractHostAndPort(r *http.Request) (string, string, error) {
 		}
 	}
 	return host, port, nil
-}
-
-// 建立傳輸協議
-func newV2RayTransportConn(
-	r *http.Request,
-	clientConn net.Conn,
-	address string,
-	transportType string,
-	transportPath string,
-) (net.Conn, error) {
-	var transportConn net.Conn
-	var err error
-
-	if transportType == "" {
-		transportType = "tcp"
-	}
-
-	if transportType == "tcp" {
-		transportConn, err = net.Dial("tcp", address)
-		if err != nil {
-			badGatewayError(clientConn)
-			log.Println("Tcp dial error:", err)
-			return nil, err
-		}
-	} else if transportType == "ws" {
-		dialerOptions := &option.DialerOptions{}
-		d, err := dialer.New(r.Context(), *dialerOptions)
-		if err != nil {
-			badGatewayError(clientConn)
-			log.Println("Websocket dial error:", err)
-			return nil, err
-		}
-
-		websocketOptions := &option.V2RayWebsocketOptions{
-			Path: transportPath,
-		}
-		tlsConfig := &option.OutboundTLSOptions{}
-		tlsOption, err := tls.NewClient(r.Context(), address, *tlsConfig)
-		if err != nil {
-			badGatewayError(clientConn)
-			return nil, err
-		}
-
-		wsTarget := metadata.ParseSocksaddr(address)
-
-		transport, err := v2raywebsocket.NewClient(r.Context(), d, wsTarget, *websocketOptions, tlsOption)
-		if err != nil {
-			badGatewayError(clientConn)
-			return nil, err
-		}
-
-		transportConn, err = transport.DialContext(r.Context())
-		if err != nil {
-			badGatewayError(clientConn)
-			return nil, err
-		}
-	}
-	return transportConn, nil
 }
 
 // 建立連線後，讓兩邊交換資料

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-vmess/vless"
 	"github.com/sagernet/sing/common/logger"
 	"github.com/sagernet/sing/common/metadata"
@@ -10,11 +11,14 @@ import (
 )
 
 type VlessProxy struct {
-	Address       string
-	Uuid          string
-	Flow          string
-	TransportType string
-	TransportPath string
+	Address          string
+	Port             string
+	Uuid             string
+	Flow             string
+	TransportType    string
+	TransportHideUrl string
+	TransportPath    string
+	TlsConfig        option.OutboundTLSOptions
 }
 
 func (v *VlessProxy) Proxy(clientConn net.Conn, r *http.Request) {
@@ -26,7 +30,7 @@ func (v *VlessProxy) Proxy(clientConn net.Conn, r *http.Request) {
 }
 
 func (v *VlessProxy) direct(clientConn net.Conn, r *http.Request) {
-	transportConn, err := newV2RayTransportConn(r, clientConn, v.Address, v.TransportType, v.TransportPath)
+	transportConn, err := newV2RayTransportConn(r, clientConn, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
 	if err != nil {
 		return
 	}
@@ -44,15 +48,14 @@ func (v *VlessProxy) direct(clientConn net.Conn, r *http.Request) {
 		return
 	}
 
-	log.Printf("Client -> Proxy (current) -> %s (vless) -> %s (target)", v.Address, r.Host)
-
+	log.Printf("Client <-> Proxy (current) <-> %s:%s (vless) <-> %s (target)", v.Address, v.Port, r.Host)
 	transfer(clientConn, serverConn)
 }
 
 func (v *VlessProxy) connect(clientConn net.Conn, r *http.Request) {
 	connectionEstablished(clientConn)
 
-	transportConn, err := newV2RayTransportConn(r, clientConn, v.Address, v.TransportType, v.TransportPath)
+	transportConn, err := newV2RayTransportConn(r, clientConn, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
 	if err != nil {
 		return
 	}
@@ -64,8 +67,7 @@ func (v *VlessProxy) connect(clientConn net.Conn, r *http.Request) {
 	}
 	defer serverConn.Close()
 
-	log.Printf("Client -> Proxy (current) -> %s (vless) -> %s (target)", v.Address, r.Host)
-
+	log.Printf("Client <-> Proxy (current) <-> %s:%s (vless) <-> %s (target)", v.Address, v.Port, r.Host)
 	transfer(clientConn, serverConn)
 }
 

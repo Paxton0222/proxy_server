@@ -18,7 +18,7 @@ type HttpProxy struct {
 }
 
 func (p *HttpProxy) Proxy(clientConn net.Conn, r *http.Request) {
-	if r.Method == http.MethodConnect {
+	if r.Method != http.MethodConnect {
 		p.direct(clientConn, r)
 	} else {
 		p.connect(clientConn, r)
@@ -45,7 +45,7 @@ func (p *HttpProxy) Request(r *http.Request) (*http.Response, error) {
 }
 
 func (p *HttpProxy) newHttpConn(r *http.Request) (net.Conn, error) {
-	// 連接 HTTPS Proxy 伺服器
+	// 連接 HTTPS ProxyServer 伺服器
 	var proxyConn net.Conn
 	var err error
 	if p.Ssl {
@@ -114,7 +114,7 @@ func (p *HttpProxy) direct(clientConn net.Conn, r *http.Request) {
 		return
 	}
 
-	log.Printf("Client <-> Proxy (current) <-> %s (http) <-> %s (target)", p.Address, r.Host)
+	log.Printf("Client <-> ProxyServer (current) <-> %s (http) <-> %s (target)", p.Address, r.Host)
 	transfer(clientConn, serverConn)
 }
 
@@ -128,6 +128,6 @@ func (p *HttpProxy) connect(clientConn net.Conn, r *http.Request) {
 	}
 	defer serverConn.Close()
 
-	log.Printf("Client <-> Proxy (current) <-> %s (https) <-> %s (target)", p.Address, r.Host)
+	log.Printf("Client <-> ProxyServer (current) <-> %s (https) <-> %s (target)", p.Address, r.Host)
 	transfer(clientConn, serverConn)
 }

@@ -47,7 +47,7 @@ func (s *SSProxy) direct(clientConn net.Conn, r *http.Request) {
 		return
 	}
 
-	log.Printf("Client <-> Proxy (current) <-> %s (ss) <-> %s (target)", s.Address, r.Host)
+	log.Printf("Client <-> ProxyServer (current) <-> %s (ss) <-> %s (target)", s.Address, r.Host)
 
 	transfer(clientConn, serverConn)
 }
@@ -62,7 +62,7 @@ func (s *SSProxy) connect(clientConn net.Conn, r *http.Request) {
 	}
 	defer serverConn.Close()
 
-	log.Printf("Client <-> Proxy (current) <-> %s (ss) <-> %s (target)", s.Address, r.Host)
+	log.Printf("Client <-> ProxyServer (current) <-> %s (ss) <-> %s (target)", s.Address, r.Host)
 
 	transfer(clientConn, serverConn)
 }

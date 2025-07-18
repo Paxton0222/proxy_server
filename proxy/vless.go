@@ -66,7 +66,7 @@ func (v *VlessProxy) direct(clientConn net.Conn, r *http.Request) {
 		return
 	}
 
-	log.Printf("Client <-> Proxy (current) <-> %s:%s (vless) <-> %s (target)", v.Address, v.Port, r.Host)
+	log.Printf("Client <-> ProxyServer (current) <-> %s:%s (vless) <-> %s (target)", v.Address, v.Port, r.Host)
 	transfer(clientConn, serverConn)
 }
 
@@ -87,7 +87,7 @@ func (v *VlessProxy) connect(clientConn net.Conn, r *http.Request) {
 	}
 	defer serverConn.Close()
 
-	log.Printf("Client <-> Proxy (current) <-> %s:%s (vless) <-> %s (target)", v.Address, v.Port, r.Host)
+	log.Printf("Client <-> ProxyServer (current) <-> %s:%s (vless) <-> %s (target)", v.Address, v.Port, r.Host)
 	transfer(clientConn, serverConn)
 }
 

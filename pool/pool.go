@@ -1,11 +1,11 @@
 package pool
 
 import (
-	"io"
 	"log"
 	"math/rand"
 	"net"
 	"net/http"
+	"proxy/proxy"
 	"sort"
 	"sync"
 	"time"
@@ -13,14 +13,14 @@ import (
 
 type Pool struct {
 	Mu            sync.RWMutex
-	ActiveNodes   []*ProxyNode
-	Nodes         []*ProxyNode
+	ActiveNodes   []*Node
+	Nodes         []*Node
 	HealthChecker HealthChecker
 	Random        *rand.Rand
 }
 
 func NewPool(
-	nodes []*ProxyNode,
+	nodes []*Node,
 ) *Pool {
 	p := &Pool{
 		Random: rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -44,20 +44,38 @@ func (p *Pool) Handle(w http.ResponseWriter, r *http.Request) {
 	if selected != nil {
 		selected.GetProxyServer().Proxy(clientConn, r)
 	} else {
-		p.Direct(w, r)
+		p.Direct(clientConn, r)
 	}
 }
 
 func (p *Pool) StartHealthCheck(interval time.Duration, checkThreads int8) {
-	p.refreshActive(checkThreads)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for range ticker.C {
-		p.refreshActive(checkThreads)
+	for {
+		resultCh := make(chan *Node)
+
+		go p.refreshActive(checkThreads, resultCh)
+
+		var active []*Node
+		for n := range resultCh {
+			// 實時收到一個健康節點就加入 active，這裡加鎖更新
+			p.Mu.Lock()
+			active = append(active, n)
+			p.ActiveNodes = active
+			p.Mu.Unlock()
+		}
+
+		// 排序健康節點列表（也可放在上面）
+		p.Mu.Lock()
+		sort.Slice(active, func(i, j int) bool { return active[i].Host < active[j].Host })
+		p.ActiveNodes = active
+		p.Mu.Unlock()
+
+		log.Printf("健康節點更新，健康節點數: %d，不健康節點數: %d", len(active), len(p.Nodes)-len(active))
+
+		time.Sleep(interval)
 	}
 }
 
-func (p *Pool) Add(node *ProxyNode) {
+func (p *Pool) Add(node *Node) {
 	p.Mu.Lock()
 	defer p.Mu.Unlock()
 	p.Nodes = append(p.Nodes, node)
@@ -70,7 +88,7 @@ func (p *Pool) Remove(host string) {
 	p.removeNode(host)
 }
 
-func (p *Pool) GetRandom() *ProxyNode {
+func (p *Pool) GetRandom() *Node {
 	p.Mu.RLock()
 	defer p.Mu.RUnlock()
 	if len(p.ActiveNodes) == 0 {
@@ -80,43 +98,42 @@ func (p *Pool) GetRandom() *ProxyNode {
 	return p.ActiveNodes[index]
 }
 
-func (p *Pool) Direct(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Scheme == "http" {
-		resp, err := http.DefaultTransport.RoundTrip(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-
-		for k, v := range resp.Header {
-			for _, val := range v {
-				w.Header().Add(k, val)
-			}
-		}
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
-	} else {
+func (p *Pool) Direct(clientConn net.Conn, r *http.Request) {
+	if r.Method == "CONNECT" {
 		destConn, err := net.Dial("tcp", r.Host)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			proxy.BadGatewayError(clientConn)
+			return
+		}
+		proxy.ConnectionEstablished(clientConn)
+		log.Printf(
+			"Client <-> ProxyServer (current - https) <-> %s (target)",
+			r.Host,
+		)
+		proxy.Transfer(clientConn, destConn)
+	} else {
+		host, port, err := proxy.ExtractHostAndPort(r)
+		if err != nil {
+			proxy.BadGatewayError(clientConn)
+			return
+		}
+		destConn, err := net.Dial("tcp", net.JoinHostPort(host, port))
+		if err != nil {
+			proxy.BadGatewayError(clientConn)
 			return
 		}
 		defer destConn.Close()
-		hijacker, ok := w.(http.Hijacker)
-		if !ok {
-			http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
-			return
-		}
-		clientConn, _, err := hijacker.Hijack()
+
+		err = proxy.HttpProxyStartTransfer(r, clientConn, destConn)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		defer clientConn.Close()
-		_, _ = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-		go io.Copy(destConn, clientConn)
-		go io.Copy(clientConn, destConn)
+
+		log.Printf(
+			"Client <-> ProxyServer (current - http) <-> %s (target)",
+			r.Host,
+		)
+		proxy.Transfer(clientConn, destConn)
 	}
 }
 
@@ -163,44 +180,27 @@ func (p *Pool) removeNode(host string) {
 	}
 }
 
-func (p *Pool) refreshActive(checkThreads int8) {
-	p.Mu.Lock()
-	defer p.Mu.Unlock()
-
-	log.Println("開始進行健康檢查，共有節點：", len(p.Nodes))
-
+func (p *Pool) refreshActive(checkThreads int8, resultCh chan<- *Node) {
 	var wg sync.WaitGroup
-	activeCh := make(chan *ProxyNode, len(p.Nodes))
 	sem := make(chan struct{}, checkThreads)
 
 	for _, node := range p.Nodes {
 		wg.Add(1)
-		go func(n *ProxyNode) {
+		go func(n *Node) {
 			defer wg.Done()
-			// 先進入 semaphore（若已滿會等待）
 			sem <- struct{}{}
-			defer func() { <-sem }() // 執行完畢後釋放一個 slot
+			defer func() { <-sem }()
 
 			if ip, err := p.HealthChecker.Ip(n.ProxyServer); err == nil {
-				activeCh <- n
-				n.NodeInfo.IP = ip // 更新 IP
+				n.NodeInfo.IP = ip
 				log.Printf("節點 %s 健康檢查成功 IP: %s", n.Host, ip)
+				resultCh <- n
 			} else {
 				log.Printf("節點 %s 健康檢查失敗: %v", n.Host, err)
 			}
 		}(node)
 	}
+
 	wg.Wait()
-	close(activeCh)
-
-	var active []*ProxyNode
-	for n := range activeCh {
-		active = append(active, n)
-	}
-
-	sort.Slice(p.Nodes, func(i, j int) bool { return p.Nodes[i].Host < p.Nodes[j].Host })
-	sort.Slice(active, func(i, j int) bool { return active[i].Host < active[j].Host })
-
-	p.ActiveNodes = active
-	log.Printf("健康節點更新，健康節點數: %d，不健康節點數: %d", len(active), len(p.Nodes)-len(active))
+	close(resultCh)
 }

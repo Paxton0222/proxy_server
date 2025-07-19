@@ -42,53 +42,53 @@ func (v *VlessProxy) Request(r *http.Request) (*http.Response, error) {
 	}
 	defer serverConn.Close()
 
-	return sendHttpOverTlsRequest(r, serverConn)
+	return SendHttpOverTlsRequest(r, serverConn)
 }
 
 func (v *VlessProxy) direct(clientConn net.Conn, r *http.Request) {
 	transportConn, err := newV2RayTransportConn(r, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 	defer transportConn.Close()
 
 	serverConn, err := v.newVlessConn(r, transportConn)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
 
-	err = httpProxyStartTransfer(r, clientConn, serverConn)
+	err = HttpProxyStartTransfer(r, clientConn, serverConn)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 
 	log.Printf("Client <-> ProxyServer (current) <-> %s:%s (vless) <-> %s (target)", v.Address, v.Port, r.Host)
-	transfer(clientConn, serverConn)
+	Transfer(clientConn, serverConn)
 }
 
 func (v *VlessProxy) connect(clientConn net.Conn, r *http.Request) {
-	connectionEstablished(clientConn)
+	ConnectionEstablished(clientConn)
 
 	transportConn, err := newV2RayTransportConn(r, v.Address, v.Port, v.TransportType, v.TransportHideUrl, v.TransportPath, v.TlsConfig)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 	defer transportConn.Close()
 
 	serverConn, err := v.newVlessConn(r, transportConn)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
 
 	log.Printf("Client <-> ProxyServer (current) <-> %s:%s (vless) <-> %s (target)", v.Address, v.Port, r.Host)
-	transfer(clientConn, serverConn)
+	Transfer(clientConn, serverConn)
 }
 
 func (v *VlessProxy) newVlessConn(r *http.Request, transportConn net.Conn) (net.Conn, error) {
@@ -102,7 +102,7 @@ func (v *VlessProxy) newVlessConn(r *http.Request, transportConn net.Conn) (net.
 		return nil, err
 	}
 
-	host, port, err := extractHostAndPort(r)
+	host, port, err := ExtractHostAndPort(r)
 	if err != nil {
 		return nil, err
 	}

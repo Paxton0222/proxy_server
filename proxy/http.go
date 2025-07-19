@@ -41,7 +41,7 @@ func (p *HttpProxy) Request(r *http.Request) (*http.Response, error) {
 	}
 	defer serverConn.Close()
 
-	return sendHttpRequest(r, serverConn)
+	return SendHttpRequest(r, serverConn)
 }
 
 func (p *HttpProxy) newHttpConn(r *http.Request) (net.Conn, error) {
@@ -104,30 +104,30 @@ func (p *HttpProxy) newHttpConn(r *http.Request) (net.Conn, error) {
 func (p *HttpProxy) direct(clientConn net.Conn, r *http.Request) {
 	serverConn, err := p.newHttpConn(r)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
 
-	err = httpProxyStartTransfer(r, clientConn, serverConn)
+	err = HttpProxyStartTransfer(r, clientConn, serverConn)
 	if err != nil {
 		return
 	}
 
 	log.Printf("Client <-> ProxyServer (current) <-> %s (http) <-> %s (target)", p.Address, r.Host)
-	transfer(clientConn, serverConn)
+	Transfer(clientConn, serverConn)
 }
 
 func (p *HttpProxy) connect(clientConn net.Conn, r *http.Request) {
-	connectionEstablished(clientConn)
+	ConnectionEstablished(clientConn)
 
 	serverConn, err := p.newHttpConn(r)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
 
 	log.Printf("Client <-> ProxyServer (current) <-> %s (https) <-> %s (target)", p.Address, r.Host)
-	transfer(clientConn, serverConn)
+	Transfer(clientConn, serverConn)
 }

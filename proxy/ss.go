@@ -30,41 +30,41 @@ func (s *SSProxy) Request(r *http.Request) (*http.Response, error) {
 	}
 	defer proxyConn.Close()
 
-	return sendHttpOverTlsRequest(r, proxyConn)
+	return SendHttpOverTlsRequest(r, proxyConn)
 }
 
 func (s *SSProxy) direct(clientConn net.Conn, r *http.Request) {
 	serverConn, err := s.newSsConn(r)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
 
-	err = httpProxyStartTransfer(r, clientConn, serverConn)
+	err = HttpProxyStartTransfer(r, clientConn, serverConn)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 
 	log.Printf("Client <-> ProxyServer (current) <-> %s (ss) <-> %s (target)", s.Address, r.Host)
 
-	transfer(clientConn, serverConn)
+	Transfer(clientConn, serverConn)
 }
 
 func (s *SSProxy) connect(clientConn net.Conn, r *http.Request) {
-	connectionEstablished(clientConn)
+	ConnectionEstablished(clientConn)
 
 	serverConn, err := s.newSsConn(r)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return
 	}
 	defer serverConn.Close()
 
 	log.Printf("Client <-> ProxyServer (current) <-> %s (ss) <-> %s (target)", s.Address, r.Host)
 
-	transfer(clientConn, serverConn)
+	Transfer(clientConn, serverConn)
 }
 
 func (s *SSProxy) newSsConn(r *http.Request) (net.Conn, error) {
@@ -78,7 +78,7 @@ func (s *SSProxy) newSsConn(r *http.Request) (net.Conn, error) {
 		return nil, err
 	}
 
-	host, port, err := extractHostAndPort(r)
+	host, port, err := ExtractHostAndPort(r)
 	if err != nil {
 		return nil, err
 	}

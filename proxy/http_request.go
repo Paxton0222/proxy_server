@@ -9,16 +9,16 @@ import (
 	"net/http"
 )
 
-func httpProxyStartTransfer(r *http.Request, clientConn net.Conn, serverConn net.Conn) error {
+func HttpProxyStartTransfer(r *http.Request, clientConn net.Conn, serverConn net.Conn) error {
 	err := r.Write(serverConn)
 	if err != nil {
-		badGatewayError(clientConn)
+		BadGatewayError(clientConn)
 		return err
 	}
 	return err
 }
 
-func getOriginalHttpRawContext(r *http.Request) string {
+func GetOriginalHttpRawContext(r *http.Request) string {
 	var buf bytes.Buffer
 	err := r.Write(&buf)
 	if err != nil {
@@ -27,7 +27,7 @@ func getOriginalHttpRawContext(r *http.Request) string {
 	return buf.String()
 }
 
-func extractHostAndPort(r *http.Request) (string, string, error) {
+func ExtractHostAndPort(r *http.Request) (string, string, error) {
 	var host string
 	var port string
 
@@ -49,8 +49,8 @@ func extractHostAndPort(r *http.Request) (string, string, error) {
 	return host, port, nil
 }
 
-func sendHttpRequest(r *http.Request, conn net.Conn) (*http.Response, error) {
-	raw := getOriginalHttpRawContext(r)
+func SendHttpRequest(r *http.Request, conn net.Conn) (*http.Response, error) {
+	raw := GetOriginalHttpRawContext(r)
 	if _, err := conn.Write([]byte(raw)); err != nil {
 		log.Println("發送請求到目標主機失敗:", err)
 		return nil, err
@@ -65,11 +65,11 @@ func sendHttpRequest(r *http.Request, conn net.Conn) (*http.Response, error) {
 	return resp, nil
 }
 
-func sendHttpOverTlsRequest(r *http.Request, proxyConn net.Conn) (*http.Response, error) {
+func SendHttpOverTlsRequest(r *http.Request, proxyConn net.Conn) (*http.Response, error) {
 	var resp *http.Response
 	var err error
 	if r.URL.Scheme == "http" {
-		resp, err = sendHttpRequest(r, proxyConn)
+		resp, err = SendHttpRequest(r, proxyConn)
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +82,7 @@ func sendHttpOverTlsRequest(r *http.Request, proxyConn net.Conn) (*http.Response
 			return nil, err
 		}
 		defer serverConn.Close()
-		resp, err = sendHttpRequest(r, serverConn)
+		resp, err = SendHttpRequest(r, serverConn)
 	}
 	return resp, err
 }

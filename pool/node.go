@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type ProxyNode struct {
+type Node struct {
 	Host        string
 	ProxyServer proxy.Proxy
 	NodeInfo    NodeInfo
@@ -18,6 +18,6 @@ type NodeInfo struct {
 	Bandwidth float64
 }
 
-func (n *ProxyNode) GetProxyServer() proxy.Proxy {
+func (n *Node) GetProxyServer() proxy.Proxy {
 	return n.ProxyServer
 }

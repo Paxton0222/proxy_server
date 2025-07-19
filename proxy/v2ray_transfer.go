@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"github.com/sagernet/sing-box/common/dialer"
 	"github.com/sagernet/sing-box/common/tls"
 	"github.com/sagernet/sing-box/option"
@@ -70,6 +71,9 @@ func newV2RayTransportConn(r *http.Request, host string, port string, transportT
 		if err != nil {
 			return nil, err
 		}
+	}
+	if transportConn == nil {
+		return nil, fmt.Errorf("newV2RayTransportConn: 建立連線失敗（conn 為 nil）")
 	}
 
 	return transportConn, nil

@@ -25,7 +25,7 @@ func newV2RayTransportConn(r *http.Request, host string, port string, transportT
 	if transportType == "tcp" {
 		transportConn, err = net.Dial("tcp", host+":"+port)
 		if err != nil {
-			log.Println("Tcp dial error:", err)
+			//log.Println("Tcp dial error:", err)
 			return nil, err
 		}
 	} else if transportType == "ws" {

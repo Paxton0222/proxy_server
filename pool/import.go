@@ -4,9 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
+	"net"
 	"net/url"
 	"os"
 	"proxy/proxy"
+	"strconv"
 	"strings"
 
 	"github.com/sagernet/sing-box/option"
@@ -20,6 +23,7 @@ func LoadProxyConfigFromFile(filePath string) []*Node {
 	lines := strings.Split(string(data), "\n")
 
 	nodes, err := ImportFromURILines(lines)
+	log.Printf("讀取節點數: %d", len(nodes))
 	if err != nil {
 		panic("解析 proxy 配置失敗: " + err.Error())
 	}
@@ -106,7 +110,7 @@ func parseVMESS(uri string) (*Node, error) {
 
 	var conf struct {
 		Add  string `json:"add"`
-		Port string `json:"port"`
+		Port int    `json:"port"`
 		ID   string `json:"id"`
 		Net  string `json:"net"`
 		Path string `json:"path"`
@@ -120,10 +124,10 @@ func parseVMESS(uri string) (*Node, error) {
 	}
 
 	return &Node{
-		Host: conf.Add + ":" + conf.Port,
+		Host: conf.Add + ":" + strconv.Itoa(conf.Port),
 		ProxyServer: &proxy.VmessProxy{
 			Address:          conf.Add,
-			Port:             conf.Port,
+			Port:             strconv.Itoa(conf.Port),
 			Uuid:             conf.ID,
 			AlterId:          conf.Aid,
 			Security:         "auto",
@@ -137,33 +141,45 @@ func parseVMESS(uri string) (*Node, error) {
 func parseSS(uri string) (*Node, error) {
 	uri = strings.TrimPrefix(uri, "ss://")
 
+	// 有些 ss:// URI 可能會帶有插件等資訊，在此先拆掉 query 和 fragment
+	if idx := strings.IndexAny(uri, "?#"); idx != -1 {
+		uri = uri[:idx]
+	}
+
 	parts := strings.SplitN(uri, "@", 2)
 	if len(parts) != 2 {
-		return nil, errors.New("invalid ss format")
+		return nil, errors.New("invalid ss format, missing '@'")
 	}
 
-	decoded, err := base64.RawStdEncoding.DecodeString(parts[0])
+	// 先嘗試完整 Base64 解碼（URL safe 也試）
+	decodedBytes, err := base64.StdEncoding.DecodeString(parts[0])
 	if err != nil {
-		decoded, err = base64.StdEncoding.DecodeString(parts[0])
-		if err != nil {
-			return nil, err
-		}
+		//log.Println("base64 decode error:", err)
+		return nil, err
+	}
+	decoded := string(decodedBytes)
+
+	// 解析格式 "method:password@host:port"
+	atIndex := strings.LastIndex(decoded, ":")
+	if atIndex == -1 {
+		return nil, errors.New("invalid ss format, missing '@'")
 	}
 
-	methodPass := string(decoded)
-	methodPassParts := strings.SplitN(methodPass, ":", 2)
-	if len(methodPassParts) != 2 {
-		return nil, errors.New("invalid ss credentials")
-	}
+	method := decoded[:atIndex]
+	pass := decoded[atIndex+1:]
+	addr := parts[1]
 
-	host, port, _ := strings.Cut(parts[1], ":")
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, errors.New("invalid host:port")
+	}
 
 	return &Node{
 		Host: host + ":" + port,
 		ProxyServer: &proxy.SSProxy{
-			Address:  host,
-			Password: methodPassParts[1],
-			Method:   methodPassParts[0],
+			Address:  host + ":" + port,
+			Password: pass,
+			Method:   method,
 		},
 	}, nil
 }

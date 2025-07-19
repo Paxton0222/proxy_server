@@ -78,7 +78,7 @@ func SendHttpOverTlsRequest(r *http.Request, proxyConn net.Conn) (*http.Response
 			ServerName: r.URL.Hostname(),
 		})
 		if err := serverConn.Handshake(); err != nil {
-			log.Println("與目標主機握手失敗:", err)
+			//log.Println("與目標主機握手失敗:", err)
 			return nil, err
 		}
 		defer serverConn.Close()

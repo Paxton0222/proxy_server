@@ -98,7 +98,7 @@ func (v *VlessProxy) newVlessConn(r *http.Request, transportConn net.Conn) (net.
 		logger.NOP(),
 	)
 	if err != nil {
-		log.Println("Vless client error:", err)
+		//log.Println("Vless client error:", err)
 		return nil, err
 	}
 

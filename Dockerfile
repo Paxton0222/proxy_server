@@ -1,4 +1,4 @@
-FROM golang:1.24.5-alpine
+FROM golang:1.24.5-alpine as build
 
 WORKDIR /app
 
@@ -9,6 +9,12 @@ RUN go mod download && \
 COPY . .
 
 RUN go build -o app main.go
+
+FROM alpine:3.21
+
+WORKDIR /app
+
+COPY --from=build /app /app/
 
 # 預設執行程式
 CMD ["./app"]

@@ -1,8 +1,15 @@
-version: '3.8'
-
 services:
   proxy_server:
-    build: .
+    image: paxton0222/proxy_server
+    build:
+      context: .
+      dockerfile: Dockerfile
+      tags:
+        - paxton0222/proxy_server
+      x-bake:
+        platforms:
+          - linux/amd64
+          - linux/arm64
     env_file:
       - .env
     ports:
